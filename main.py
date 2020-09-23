@@ -2,7 +2,7 @@ import pickle
 
 import pandas as pd
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
@@ -10,28 +10,50 @@ from data import DATA_ROOT
 
 
 class Trainer(object):
-    def __init__(self, model, train_loader, val_loader, lr=0.001):
+    def __init__(
+        self, model, train_loader, val_loader, criterion=nn.CrossEntropyLoss(), lr=0.001
+    ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        self.train_loss = list()
+        self.test_loss = list()
+        self.test_accuracy = list()
+        self.criterion = criterion
 
     def run(self, epochs=50):
         for epoch in range(1, epochs + 1):
-            train(self.model, self.device, self.train_loader, self.optimizer, epoch)
-            test(self.model, self.device, self.val_loader)
+            losses = train(
+                self.model,
+                self.device,
+                self.train_loader,
+                self.optimizer,
+                self.criterion,
+                epoch,
+            )  # Returns loss per batch
+            self.train_loss.extend(losses)
+
+            loss, accuracy = test(
+                self.model, self.device, self.val_loader, self.criterion
+            )  # Returns loss/accuracy per epoch
+            self.test_loss.append(loss)
+            self.test_accuracy.append(accuracy)
 
 
-def train(model, device, train_loader, optimizer, epoch):
+def train(model, device, train_loader, optimizer, criterion, epoch):
     model.train()
+    batch_loss = list()
+
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
-        loss = F.cross_entropy(output, target)
+        loss = criterion(output, target)
         loss.backward()
         optimizer.step()
+        batch_loss.append(loss.item())
         if batch_idx % 100 == 0:
             print(
                 "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
@@ -39,12 +61,14 @@ def train(model, device, train_loader, optimizer, epoch):
                     batch_idx * len(data),
                     len(train_loader.dataset),
                     100.0 * batch_idx / len(train_loader),
-                    loss.item(),
+                    batch_loss[-1],
                 )
             )
 
+    return batch_loss
 
-def test(model, device, test_loader):
+
+def test(model, device, test_loader, criterion):
     model.eval()
     test_loss = 0
     correct = 0
@@ -52,24 +76,24 @@ def test(model, device, test_loader):
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.cross_entropy(
-                output, target, reduction="sum"
-            ).item()  # sum up batch loss
+            test_loss += criterion(output, target).item() * len(
+                data
+            )  # sum up batch loss
             pred = output.argmax(
                 dim=1, keepdim=True
             )  # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     test_loss /= len(test_loader.dataset)
+    accuracy = correct / len(test_loader.dataset)
 
     print(
         "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-            test_loss,
-            correct,
-            len(test_loader.dataset),
-            100.0 * correct / len(test_loader.dataset),
+            test_loss, correct, len(test_loader.dataset), 100.0 * accuracy,
         )
     )
+
+    return test_loss, accuracy
 
 
 def make_predictions(model, device):

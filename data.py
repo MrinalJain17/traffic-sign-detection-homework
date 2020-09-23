@@ -19,6 +19,8 @@ def data_loaders(batch_size=64, data_transforms=None):
             "train": default_data_transform,
             "val": default_data_transform,
         }
+    else:
+        data_transforms = {"train": data_transforms, "val": default_data_transform}
     assert isinstance(data_transforms, dict)
 
     train_loader = torch.utils.data.DataLoader(
@@ -60,6 +62,18 @@ def initialize_data(folder):
                             train_folder + "/" + dirs + "/" + f,
                             val_folder + "/" + dirs + "/" + f,
                         )
+
+
+class AddGaussianNoise(object):
+    def __init__(self, mean=0.0, std=0.1):
+        self.std = std
+        self.mean = mean
+
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()) * self.std + self.mean
+
+    def __repr__(self):
+        return self.__class__.__name__ + f"(mean={self.mean}, std={self.std})"
 
 
 if __name__ == "__main__":
