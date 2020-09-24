@@ -23,7 +23,9 @@ class Trainer(object):
         self.test_accuracy = list()
         self.criterion = criterion
 
-    def run(self, epochs=50):
+    def run(self, epochs=50, lr_decay=None):
+        self.scheduler_setup(lr_decay)
+
         for epoch in range(1, epochs + 1):
             losses = train(
                 self.model,
@@ -40,6 +42,34 @@ class Trainer(object):
             )  # Returns loss/accuracy per epoch
             self.test_loss.append(loss)
             self.test_accuracy.append(accuracy)
+
+            self.scheduler_step(lr_decay, epoch)
+
+    def scheduler_setup(self, lr_decay):
+        if lr_decay is None:
+            pass
+        else:
+            assert lr_decay in ["step"]
+            if lr_decay == "step":
+                self.warmup = optim.lr_scheduler.LambdaLR(
+                    self.optimizer, lr_lambda=self.lambda_warmup
+                )
+                self.scheduler = optim.lr_scheduler.MultiStepLR(
+                    self.optimizer, [10, 15, 20], 0.1
+                )
+
+    def scheduler_step(self, lr_decay, epoch):
+        if lr_decay is None:
+            pass
+        else:
+            assert lr_decay in ["step"]
+            if lr_decay == "step":
+                self.scheduler.step()
+                if epoch <= 5:
+                    self.warmup.step()
+
+    def lambda_warmup(self, epoch):
+        return epoch / 5
 
 
 def train(model, device, train_loader, optimizer, criterion, epoch):
