@@ -1,5 +1,4 @@
 import torch.nn as nn
-import torch.nn.functional as F
 from torchvision.models import ResNet
 from torchvision.models.resnet import BasicBlock, conv1x1
 
@@ -25,14 +24,14 @@ class ResNet_C(ResNet):
         )
 
 
-class ResNet_D(ResNet_C):
+class ResNet_D(ResNet):
     """Resnet variant from https://arxiv.org/abs/1812.01187
 
     TODO
     """
 
     def __init__(self, block, layers, **kwargs):
-        super(ResNet_C, self).__init__(block, layers, **kwargs)
+        super(ResNet_D, self).__init__(block, layers, **kwargs)
         self.conv1 = nn.Sequential(
             *[
                 nn.Conv2d(3, 32, 3, stride=2, padding=1, bias=False),
