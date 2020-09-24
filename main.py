@@ -7,11 +7,23 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from data import DATA_ROOT
+from utils import AverageMeter, mixup_data, mixup_criterion
 
 
 class Trainer(object):
+    """An abstraction for the training/validation procedure, with added features.
+
+    TODO
+    """
+
     def __init__(
-        self, model, train_loader, val_loader, criterion=nn.CrossEntropyLoss(), lr=0.001
+        self,
+        model,
+        train_loader,
+        val_loader,
+        criterion=nn.CrossEntropyLoss(),
+        lr=0.001,
+        early_stopping_tolerance=10,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -22,10 +34,14 @@ class Trainer(object):
         self.test_loss = list()
         self.test_accuracy = list()
         self.criterion = criterion
+        self.early_stopping_tolerance = early_stopping_tolerance
 
-    def run(self, epochs=50, lr_decay=None):
+    def run(self, epochs, lr_decay=False, mixup=False):
+        train_loss_meter = AverageMeter()
+        min_val_loss = 1e8
+        tolerance = self.early_stopping_tolerance
+
         self.scheduler_setup(lr_decay)
-
         for epoch in range(1, epochs + 1):
             losses = train(
                 self.model,
@@ -34,66 +50,89 @@ class Trainer(object):
                 self.optimizer,
                 self.criterion,
                 epoch,
+                mixup,
+                train_loss_meter,
             )  # Returns loss per batch
             self.train_loss.extend(losses)
 
-            loss, accuracy = test(
+            val_loss, val_accuracy = test(
                 self.model, self.device, self.val_loader, self.criterion
             )  # Returns loss/accuracy per epoch
-            self.test_loss.append(loss)
-            self.test_accuracy.append(accuracy)
+            self.test_loss.append(val_loss)
+            self.test_accuracy.append(val_accuracy)
 
             self.scheduler_step(lr_decay, epoch)
 
+            if val_loss < min_val_loss:
+                min_val_loss = val_loss
+                tolerance = (
+                    self.early_stopping_tolerance
+                )  # Reset the tolerance because validation loss improved
+            else:
+                tolerance -= 1
+
+            print(
+                f"Epoch {epoch} \t"
+                f"train_loss: {train_loss_meter.average:.6f}"
+                f"\tval_loss: {val_loss:.4f}\tval_accuracy: {val_accuracy * 100:.2f}%"
+            )
+            train_loss_meter.reset()
+
+            if tolerance == 0:
+                # Early stopping the training process
+                break
+
     def scheduler_setup(self, lr_decay):
-        if lr_decay is None:
-            pass
+        if lr_decay:
+            self.warmup = optim.lr_scheduler.LambdaLR(
+                self.optimizer, lr_lambda=self.lambda_warmup
+            )
+            self.scheduler = optim.lr_scheduler.MultiStepLR(
+                self.optimizer, [10, 15, 20], 0.1
+            )
         else:
-            assert lr_decay in ["step"]
-            if lr_decay == "step":
-                self.warmup = optim.lr_scheduler.LambdaLR(
-                    self.optimizer, lr_lambda=self.lambda_warmup
-                )
-                self.scheduler = optim.lr_scheduler.MultiStepLR(
-                    self.optimizer, [10, 15, 20], 0.1
-                )
+            pass
 
     def scheduler_step(self, lr_decay, epoch):
-        if lr_decay is None:
-            pass
+        if lr_decay:
+            self.scheduler.step()
+            if epoch <= 5:
+                self.warmup.step()
         else:
-            assert lr_decay in ["step"]
-            if lr_decay == "step":
-                self.scheduler.step()
-                if epoch <= 5:
-                    self.warmup.step()
+            pass
 
     def lambda_warmup(self, epoch):
         return epoch / 5
 
 
-def train(model, device, train_loader, optimizer, criterion, epoch):
+def train(
+    model,
+    device,
+    train_loader,
+    optimizer,
+    criterion,
+    epoch,
+    mixup=False,
+    avg_meter=None,
+):
     model.train()
     batch_loss = list()
+    alpha = 0.2 if mixup else 0
+    lam = None  # Required if doing mixup training
 
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
+        data, target_a, target_b, lam = mixup_data(
+            data, target, device, alpha
+        )  # Targets here correspond to the pair of examples used to create the mix
         optimizer.zero_grad()
         output = model(data)
-        loss = criterion(output, target)
+        loss = mixup_criterion(criterion, output, target_a, target_b, lam)
         loss.backward()
         optimizer.step()
         batch_loss.append(loss.item())
-        if batch_idx % 100 == 0:
-            print(
-                "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-                    epoch,
-                    batch_idx * len(data),
-                    len(train_loader.dataset),
-                    100.0 * batch_idx / len(train_loader),
-                    batch_loss[-1],
-                )
-            )
+        if avg_meter is not None:
+            avg_meter.update(batch_loss[-1], n=len(data))
 
     return batch_loss
 
@@ -116,12 +155,6 @@ def test(model, device, test_loader, criterion):
 
     test_loss /= len(test_loader.dataset)
     accuracy = correct / len(test_loader.dataset)
-
-    print(
-        "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-            test_loss, correct, len(test_loader.dataset), 100.0 * accuracy,
-        )
-    )
 
     return test_loss, accuracy
 
