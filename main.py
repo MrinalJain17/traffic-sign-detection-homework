@@ -23,7 +23,7 @@ class Trainer(object):
         val_loader,
         criterion=nn.CrossEntropyLoss(),
         lr=0.001,
-        early_stopping_tolerance=10,
+        early_stopping_tolerance=5,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
@@ -62,15 +62,7 @@ class Trainer(object):
             self.test_accuracy.append(val_accuracy)
 
             self.scheduler_step(lr_decay, epoch)
-
-            if val_loss < min_val_loss:
-                min_val_loss = val_loss
-                tolerance = (
-                    self.early_stopping_tolerance
-                )  # Reset the tolerance because validation loss improved
-            else:
-                tolerance -= 1
-
+            
             print(
                 f"Epoch {epoch} \t"
                 f"train_loss: {train_loss_meter.average:.6f}"
@@ -78,8 +70,18 @@ class Trainer(object):
             )
             train_loss_meter.reset()
 
+            if val_loss < min_val_loss:
+                min_val_loss = val_loss
+                tolerance = (
+                    self.early_stopping_tolerance
+                )  # Reset the tolerance because validation loss improved
+            else:
+                if epoch > 20:  # Early stopping doesn't start before 20 epochs
+                    tolerance -= 1
+
             if tolerance == 0:
                 # Early stopping the training process
+                print(f"\nEarly stopping. Val loss did not improve for {self.early_stopping_tolerance} consecutive epochs")
                 break
 
     def scheduler_setup(self, lr_decay):
