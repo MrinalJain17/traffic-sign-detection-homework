@@ -92,7 +92,10 @@ class ResNet_D(ResNet):
 class BasicBlockV2(nn.Module):
     r"""BasicBlock V2 from
     `"Identity Mappings in Deep Residual Networks"<https://arxiv.org/abs/1603.05027>`_ paper.
-    This is used for ResNet V2 for 18, 34 layers.
+    This is used for ResNet V2 for 18 layers.
+    
+    Code taken from: https://github.com/pytorch/vision/pull/491
+    
     Args:
         inplanes (int): number of input channels.
         planes (int): number of output channels.
@@ -129,7 +132,10 @@ class BasicBlockV2(nn.Module):
 class BottleneckV2(nn.Module):
     r"""Bottleneck V2 from
     `"Identity Mappings in Deep Residual Networks"<https://arxiv.org/abs/1603.05027>`_ paper.
-    This is used for ResNet V2 for 50, 101, 152 layers.
+    This is used for ResNet V2 for 50 layers.
+    
+    Code taken from: https://github.com/pytorch/vision/pull/491
+    
     Args:
         inplanes (int): number of input channels.
         planes (int): number of output channels.
@@ -172,9 +178,12 @@ class BottleneckV2(nn.Module):
         return out + residual
 
 
-class ResNetV2_D(nn.Module):
+class ResNetV2_C(nn.Module):
     r"""ResNet V2 model from
     `"Identity Mappings in Deep Residual Networks"<https://arxiv.org/abs/1603.05027>`_ paper.
+    
+    Code taken from: https://github.com/pytorch/vision/pull/491
+    
     Args:
         block (Module) : class for the residual block. Options are BasicBlockV1, BottleneckV1.
         layers (list of int) : numbers of layers in each block
@@ -182,7 +191,7 @@ class ResNetV2_D(nn.Module):
     """
 
     def __init__(self, block, layers, num_classes=1000):
-        super(ResNetV2_D, self).__init__()
+        super(ResNetV2_C, self).__init__()
         assert block in (
             BottleneckV2,
             BasicBlockV2,
@@ -224,13 +233,7 @@ class ResNetV2_D(nn.Module):
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
-            downsample = nn.Sequential(
-                *[
-                    nn.AvgPool2d(2, 2, ceil_mode=True, count_include_pad=False),
-                    conv1x1(self.inplanes, planes * block.expansion, stride=1),
-                    nn.BatchNorm2d(planes * block.expansion),
-                ]
-            )
+            downsample = conv1x1(self.inplanes, planes * block.expansion, stride=stride)
 
         layers = [
             block(self.inplanes, planes, stride, downsample),
@@ -269,7 +272,7 @@ def _resnet(arch, block, layers, variant=None, **kwargs):
     elif variant == "D":
         model = ResNet_D(block, layers, **kwargs)
     elif variant == "PA":
-        model = ResNetV2_D(block, layers, **kwargs)
+        model = ResNetV2_C(block, layers, **kwargs)
     return model
 
 
