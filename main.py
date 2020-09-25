@@ -62,7 +62,7 @@ class Trainer(object):
             self.test_accuracy.append(val_accuracy)
 
             self.scheduler_step(lr_decay, epoch)
-            
+
             print(
                 f"Epoch {epoch} \t"
                 f"train_loss: {train_loss_meter.average:.6f}"
@@ -81,7 +81,10 @@ class Trainer(object):
 
             if tolerance == 0:
                 # Early stopping the training process
-                print(f"\nEarly stopping. Val loss did not improve for {self.early_stopping_tolerance} consecutive epochs")
+                print(
+                    f"\nEarly stopping. Val loss did not improve for "
+                    f"{self.early_stopping_tolerance} consecutive epochs"
+                )
                 break
 
     def scheduler_setup(self, lr_decay):
